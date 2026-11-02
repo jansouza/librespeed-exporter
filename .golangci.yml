@@ -1,0 +1,26 @@
+version: "2"
+
+run:
+  build-tags:
+    - integration
+
+linters:
+  enable:
+    - errorlint
+    - gosec
+    - revive
+  exclusions:
+    rules:
+      # Tests read fixtures and write temp files by design.
+      - path: _test\.go
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/jansouza/librespeed-exporter

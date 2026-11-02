@@ -1,0 +1,32 @@
+interval: 1h
+run_on_start: false
+timeout: 90s
+collect_client_info: true
+
+librespeed_cli:
+  path: /usr/local/bin/librespeed-cli
+
+test:
+  download: true
+  upload: false
+  duration: 20s
+  concurrent: 6
+  chunks: 50
+  upload_size: 4MiB
+  http_timeout: 30s
+  ping_method: icmp
+  ip_version: 6
+  source_address: "2001:db8::10"
+  interface: ""
+  no_preallocate: true
+
+servers:
+  - name: home
+    url: https://speed.example.com/
+  - name: lab
+    url: http://10.0.0.5:8080/
+    download_path: garbage
+    upload_path: empty
+    ping_path: empty
+    ip_path: getIP
+    insecure_skip_verify: true

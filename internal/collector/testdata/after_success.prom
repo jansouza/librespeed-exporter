@@ -1,0 +1,49 @@
+# HELP librespeed_cli_info Version of the librespeed-cli binary in use, always 1.
+# TYPE librespeed_cli_info gauge
+librespeed_cli_info{version="1.0.14"} 1
+# HELP librespeed_config_last_reload_successful Whether the last configuration reload succeeded.
+# TYPE librespeed_config_last_reload_successful gauge
+librespeed_config_last_reload_successful 1
+# HELP librespeed_download_bytes_per_second Download speed measured in the last successful test.
+# TYPE librespeed_download_bytes_per_second gauge
+librespeed_download_bytes_per_second{server="home"} 6.187875e+07
+# HELP librespeed_jitter_seconds Jitter measured in the last successful test.
+# TYPE librespeed_jitter_seconds gauge
+librespeed_jitter_seconds{server="home"} 0.00102
+# HELP librespeed_last_success_timestamp_seconds Unix time the last successful test finished.
+# TYPE librespeed_last_success_timestamp_seconds gauge
+librespeed_last_success_timestamp_seconds{server="home"} 1.7000000355e+09
+# HELP librespeed_last_test_timestamp_seconds Unix time the last test finished, successful or not.
+# TYPE librespeed_last_test_timestamp_seconds gauge
+librespeed_last_test_timestamp_seconds{server="home"} 1.7000000355e+09
+# HELP librespeed_ping_seconds Mean latency measured in the last successful test.
+# TYPE librespeed_ping_seconds gauge
+librespeed_ping_seconds{server="home"} 0.01234
+# HELP librespeed_server_info Configured LibreSpeed server, always 1.
+# TYPE librespeed_server_info gauge
+librespeed_server_info{server="home",url="https://speed.example.com/"} 1
+librespeed_server_info{server="lab",url="http://10.0.0.5:8080/"} 1
+# HELP librespeed_test_duration_seconds How long the last librespeed-cli run took.
+# TYPE librespeed_test_duration_seconds gauge
+librespeed_test_duration_seconds{server="home"} 35.5
+# HELP librespeed_test_running Whether a librespeed-cli process is running.
+# TYPE librespeed_test_running gauge
+librespeed_test_running 0
+# HELP librespeed_tests_total Number of tests run, by result.
+# TYPE librespeed_tests_total counter
+librespeed_tests_total{result="failure",server="home"} 0
+librespeed_tests_total{result="success",server="home"} 1
+librespeed_tests_total{result="failure",server="lab"} 0
+librespeed_tests_total{result="success",server="lab"} 0
+# HELP librespeed_transferred_bytes_total Bytes transferred by successful tests, by direction.
+# TYPE librespeed_transferred_bytes_total counter
+librespeed_transferred_bytes_total{direction="download",server="home"} 9.53155584e+08
+librespeed_transferred_bytes_total{direction="upload",server="home"} 9.1226112e+08
+librespeed_transferred_bytes_total{direction="download",server="lab"} 0
+librespeed_transferred_bytes_total{direction="upload",server="lab"} 0
+# HELP librespeed_up Whether the last test against the server succeeded.
+# TYPE librespeed_up gauge
+librespeed_up{server="home"} 1
+# HELP librespeed_upload_bytes_per_second Upload speed measured in the last successful test.
+# TYPE librespeed_upload_bytes_per_second gauge
+librespeed_upload_bytes_per_second{server="home"} 6.0015e+07

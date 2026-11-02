@@ -1,0 +1,28 @@
+groups:
+  - name: librespeed
+    rules:
+      - alert: LibrespeedTestFailing
+        expr: librespeed_up == 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Speed tests against {{ $labels.server }} are failing"
+          description: "The last speed tests against {{ $labels.server }} failed for over an hour. Check the exporter logs for the librespeed-cli error."
+
+      - alert: LibrespeedResultsStale
+        expr: time() - librespeed_last_success_timestamp_seconds > 3 * 3600
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful speed test against {{ $labels.server }} in 3 hours"
+          description: "The last successful test against {{ $labels.server }} was {{ $value | humanizeDuration }} ago."
+
+      - alert: LibrespeedDownloadLow
+        # 100 Mbps = 12.5e6 bytes/s. Adjust to the contracted speed.
+        expr: avg_over_time(librespeed_download_bytes_per_second[3h]) < 12.5e6
+        labels:
+          severity: warning
+        annotations:
+          summary: "Download speed to {{ $labels.server }} is below 100 Mbps"
+          description: "The 3-hour average download speed is {{ $value | humanize }}B/s."

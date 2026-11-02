@@ -1,0 +1,19 @@
+# Build output
+/librespeed-exporter
+/dist/
+
+# Test and coverage output
+*.test
+*.out
+coverage.html
+
+# Local configuration
+/librespeed-exporter.yml
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Downloaded tools and integration test output
+/.cache/

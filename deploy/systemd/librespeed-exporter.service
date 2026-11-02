@@ -1,0 +1,41 @@
+# Install the binaries in /usr/local/bin (librespeed-exporter and
+# librespeed-cli) and the configuration in /etc/librespeed-exporter/config.yml,
+# then: systemctl daemon-reload && systemctl enable --now librespeed-exporter
+[Unit]
+Description=Prometheus exporter for LibreSpeed speed tests
+Documentation=https://github.com/jansouza/librespeed-exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+ExecStart=/usr/local/bin/librespeed-exporter --config.file=/etc/librespeed-exporter/config.yml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=10s
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

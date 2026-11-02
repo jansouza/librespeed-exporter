@@ -1,0 +1,22 @@
+# HELP librespeed_config_last_reload_successful Whether the last configuration reload succeeded.
+# TYPE librespeed_config_last_reload_successful gauge
+librespeed_config_last_reload_successful 1
+# HELP librespeed_server_info Configured LibreSpeed server, always 1.
+# TYPE librespeed_server_info gauge
+librespeed_server_info{server="home",url="https://speed.example.com/"} 1
+librespeed_server_info{server="lab",url="http://10.0.0.5:8080/"} 1
+# HELP librespeed_test_running Whether a librespeed-cli process is running.
+# TYPE librespeed_test_running gauge
+librespeed_test_running 0
+# HELP librespeed_tests_total Number of tests run, by result.
+# TYPE librespeed_tests_total counter
+librespeed_tests_total{result="failure",server="home"} 0
+librespeed_tests_total{result="success",server="home"} 0
+librespeed_tests_total{result="failure",server="lab"} 0
+librespeed_tests_total{result="success",server="lab"} 0
+# HELP librespeed_transferred_bytes_total Bytes transferred by successful tests, by direction.
+# TYPE librespeed_transferred_bytes_total counter
+librespeed_transferred_bytes_total{direction="download",server="home"} 0
+librespeed_transferred_bytes_total{direction="upload",server="home"} 0
+librespeed_transferred_bytes_total{direction="download",server="lab"} 0
+librespeed_transferred_bytes_total{direction="upload",server="lab"} 0

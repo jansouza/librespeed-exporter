@@ -1,0 +1,46 @@
+version: 2
+
+project_name: librespeed-exporter
+
+builds:
+  - id: librespeed-exporter
+    main: ./cmd/librespeed-exporter
+    binary: librespeed-exporter
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/prometheus/common/version.Version={{ .Version }}
+      - -X github.com/prometheus/common/version.Revision={{ .FullCommit }}
+      - -X github.com/prometheus/common/version.Branch={{ .Branch }}
+      - -X github.com/prometheus/common/version.BuildUser=goreleaser
+      - -X github.com/prometheus/common/version.BuildDate={{ time "20060102-15:04:05" }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - librespeed-exporter.example.yml
+      - deploy/systemd/librespeed-exporter.service
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github

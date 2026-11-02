@@ -1,0 +1,9 @@
+# The LibreSpeed server here runs on the same machine, so tests are limited
+# only by CPU and move a lot of data. Short tests keep that in check.
+interval: 10m
+test:
+  duration: 5s
+
+servers:
+  - name: local
+    url: http://librespeed:8080/

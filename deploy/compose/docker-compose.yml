@@ -1,0 +1,42 @@
+# Demo stack: a local LibreSpeed server, the exporter, Prometheus with the
+# example alerts and Grafana with the example dashboard.
+#
+#   docker compose up -d --build
+#
+# Metrics:    http://127.0.0.1:9469/metrics
+# Prometheus: http://127.0.0.1:9090
+# Grafana:    http://127.0.0.1:3000 (admin / admin)
+name: librespeed-exporter-demo
+
+services:
+  librespeed:
+    image: ghcr.io/librespeed/speedtest:6.3.1
+
+  exporter:
+    build: ../..
+    # To use the published image instead of building it:
+    # image: ghcr.io/jansouza/librespeed-exporter:0.1
+    volumes:
+      - ./librespeed-exporter.yml:/etc/librespeed-exporter/config.yml:ro
+    ports:
+      - "127.0.0.1:9469:9469"
+    depends_on:
+      librespeed:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    volumes:
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/librespeed.yml:ro
+      - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/librespeed.yml:ro
+      - ../grafana/dashboard.json:/var/lib/grafana/dashboards/librespeed.json:ro
+    ports:
+      - "127.0.0.1:3000:3000"

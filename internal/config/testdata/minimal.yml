@@ -1,0 +1,3 @@
+servers:
+  - name: home
+    url: https://speed.example.com/

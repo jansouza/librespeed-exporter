@@ -1,0 +1,66 @@
+# librespeed-exporter configuration. Every field except servers is optional;
+# the values below are the defaults.
+# Full reference: docs/usage.md
+
+# Time between the start of two test cycles. Each cycle tests every server,
+# one at a time.
+interval: 30m
+
+# Run a cycle right after startup instead of waiting for the first interval.
+run_on_start: true
+
+# Maximum duration of one librespeed-cli run. When exceeded, the process is
+# stopped and the test counts as a failure. Must be at least 15s plus
+# duration for each enabled phase (download and upload).
+timeout: 2m
+
+# Expose librespeed_client_info with the public IP and ISP seen by the
+# server. Off because the IP changes and starts new series.
+collect_client_info: false
+
+librespeed_cli:
+  # Path to the binary. Empty means looking up librespeed-cli in PATH.
+  path: ""
+
+# Parameters passed to librespeed-cli on every test.
+test:
+  download: true
+  upload: true
+  # Duration of each phase, in whole seconds (--duration).
+  duration: 15s
+  # Parallel connections (--concurrent).
+  concurrent: 3
+  # Size of each download request (--chunks). The chunk size depends on the
+  # server; on the PHP backend it is 1 MiB.
+  chunks: 100
+  # Size of each upload POST, a multiple of 1KiB (--upload-size).
+  upload_size: 1024KiB
+  # Timeout of each HTTP request within the test (--timeout).
+  http_timeout: 15s
+  # http always measures over HTTP (--no-icmp). icmp tries ICMP and, if it
+  # fails, silently falls back to HTTP, mixing both methods in one series.
+  ping_method: http
+  # 0 = automatic, 4 = IPv4 only (--ipv4), 6 = IPv6 only (--ipv6).
+  ip_version: 0
+  # Source IP address (--source). Cannot be combined with interface.
+  source_address: ""
+  # Source network interface (--interface).
+  interface: ""
+  # Do not preallocate the upload payload (--no-pre-allocate). Uses less
+  # memory and more CPU; useful on small devices.
+  no_preallocate: false
+
+servers:
+    # name becomes the "server" label on the metrics. Required and unique.
+  - name: home
+    url: https://speed.example.com/
+    # Paths relative to url. The defaults are those of the LibreSpeed PHP
+    # backend; other backends may use different paths.
+    download_path: backend/garbage.php
+    upload_path: backend/empty.php
+    ping_path: backend/empty.php
+    ip_path: backend/getIP.php
+    # Accept an invalid or self-signed certificate (--skip-cert-verify).
+    insecure_skip_verify: false
+    # PEM file with the CA that signs the server certificate (--ca-cert).
+    ca_file: ""

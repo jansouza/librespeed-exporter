@@ -1,0 +1,7 @@
+.git
+.github
+.cache
+dist
+librespeed-exporter
+*.test
+*.out
