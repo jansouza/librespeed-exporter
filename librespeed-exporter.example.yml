@@ -50,6 +50,17 @@ test:
   # memory and more CPU; useful on small devices.
   no_preallocate: false
 
+# Continuous latency probing, the equivalent of the LibreSpeed web stability
+# test. Each server's ping_path gets a small HTTP request every interval,
+# independently of librespeed-cli. Probing pauses while a speed test runs, so
+# the saturated link does not show up as latency spikes.
+stability:
+  enabled: false
+  # Minimum time between two probes to the same server (at least 200ms).
+  interval: 1s
+  # A probe that takes longer than this counts as failed.
+  timeout: 5s
+
 servers:
     # name becomes the "server" label on the metrics. Required and unique.
   - name: home

@@ -20,6 +20,11 @@ test:
   interface: ""
   no_preallocate: true
 
+stability:
+  enabled: true
+  interval: 500ms
+  timeout: 2s
+
 servers:
   - name: home
     url: https://speed.example.com/

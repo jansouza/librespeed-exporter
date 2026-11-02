@@ -48,6 +48,16 @@ These fields become librespeed-cli flags and apply to every server.
 | `interface` | empty | `--interface` | Source interface for the tests. Cannot be combined with `source_address` |
 | `no_preallocate` | `false` | `--no-pre-allocate` | Generate the upload payload on the fly. Uses less memory and more CPU |
 
+### Stability (`stability`)
+
+Continuous latency probing, the equivalent of the LibreSpeed web stability test. See [Stability probing](#stability-probing).
+
+| Field | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Probe every server continuously |
+| `interval` | `1s` | Minimum time between two probes to the same server. At least `200ms` |
+| `timeout` | `5s` | A probe that takes longer counts as failed |
+
 ### Servers (`servers`)
 
 | Field | Default | Description |
@@ -74,6 +84,7 @@ The exporter does not start, and a reload is rejected, when:
 - `timeout` is less than 15s plus `duration` for each enabled phase (45s with the defaults);
 - `concurrent` or `chunks` is less than 1, or `upload_size` is not a multiple of 1 KiB;
 - `source_address` is not an IP, or is set together with `interface`;
+- `stability.interval` is under 200ms, or `stability.timeout` is not greater than zero;
 - `ca_file` does not exist.
 
 Every problem is reported at once, with the path of the field, for example `servers[1].name: "lab" is already used by servers[0]`.
@@ -121,6 +132,16 @@ These metrics appear after the first success and keep the last measured value wh
 | `librespeed_test_running` | gauge | | 1 while librespeed-cli is running |
 | `librespeed_config_last_reload_successful` | gauge | | 0 if the last reload failed |
 
+### Stability
+
+Only while `stability.enabled` is true.
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `librespeed_stability_latency_seconds` | histogram | `server` | Latency of successful probes |
+| `librespeed_stability_jitter_seconds` | histogram | `server` | Latency difference between consecutive successful probes |
+| `librespeed_stability_requests_total` | counter | `server`, `result` | Probes sent, by `success` or `failure` |
+
 ### Info
 
 | Metric | Labels | Description |
@@ -141,6 +162,17 @@ time() - librespeed_last_success_timestamp_seconds
 
 # Data used by the tests over the last 24 hours
 sum by (server) (increase(librespeed_transferred_bytes_total[1d]))
+
+# Stability: 95th percentile latency over 5 minutes
+histogram_quantile(0.95, sum by (server, le) (rate(librespeed_stability_latency_seconds_bucket[5m])))
+
+# Stability: mean jitter over 5 minutes
+sum by (server) (rate(librespeed_stability_jitter_seconds_sum[5m]))
+  / sum by (server) (rate(librespeed_stability_jitter_seconds_count[5m]))
+
+# Stability: share of failed probes over 5 minutes
+sum by (server) (rate(librespeed_stability_requests_total{result="failure"}[5m]))
+  / sum by (server) (rate(librespeed_stability_requests_total[5m]))
 ```
 
 ## Bandwidth use
@@ -152,6 +184,30 @@ A test transfers roughly `speed × duration` for each enabled phase. On a 500 Mb
 - with `interval: 30m`, 48 tests per day ≈ 90 GB per day, per server.
 
 To reduce it, increase `interval`, reduce `duration` or disable one of the phases. librespeed-cli has no volume limit, so neither does the exporter.
+
+## Stability probing
+
+With `stability.enabled: true`, the exporter sends one small HTTP request to each server's `ping_path` every `stability.interval`, all the time, and records latency, jitter and failures. It is the same measurement as the stability test in the LibreSpeed web UI, run continuously so that short drops between speed tests show up in Prometheus.
+
+- Latency is measured from the request being sent to the first response byte, over a kept-alive connection.
+- A failure is a connection error, a non-200 response or a probe slower than `stability.timeout`. It is not packet loss.
+- Probing pauses while a speed test runs, because the saturated link would show up as latency spikes.
+- Probes use the server's `insecure_skip_verify` and `ca_file` and the test's `ip_version` and `source_address`. `test.interface` does not apply to them.
+- Each probe is about 500 bytes of HTTP (measured against the official LibreSpeed image). With TCP/IP overhead, the default 1s interval adds up to roughly 2 GB per month per server. Ask before probing someone else's public server every second.
+
+The example alert `LibrespeedStabilityFailures` fires when more than 5% of the probes fail for 10 minutes, and the example dashboard has a stability row with latency percentiles, jitter and failed requests.
+
+## Kubernetes
+
+Run a single replica with the `Recreate` deployment strategy. With `RollingUpdate`, the new pod starts testing while the old one is still running, so their tests can overlap and skew each other's results.
+
+Every new pod gets new `pod` and `instance` labels, so each restart starts new series for the same `server`. Aggregate by `server` in queries that should show one line per server, as the example dashboard does:
+
+```promql
+max by (server) (librespeed_download_bytes_per_second)
+```
+
+With `run_on_start: true`, every pod start runs a test right away. A pod in a crash loop keeps testing, so keep an eye on `librespeed_transferred_bytes_total` on metered links.
 
 ## ICMP ping
 
@@ -175,6 +231,8 @@ sysctl -w net.ipv4.ping_group_range="0 2147483647"
 | `librespeed-cli run timed out` | The test took longer than `timeout`. Increase `timeout` or reduce `duration` |
 | `librespeed-cli reported a download speed of zero` | The download transferred nothing. Check `download_path` |
 | `librespeed-cli is not usable` (at startup) | The binary was not found or did not answer `--version`. Check `librespeed_cli.path` |
+| `Stability probe failing` / `Stability probe recovered` | Logged once when a server's probes start failing and once when they recover |
+| `Stability probing disabled for server` | The server's `ca_file` could not be read or has no PEM certificate; that server is not probed |
 | `Previous test cycle still running, skipping this one` | A cycle takes longer than `interval`. Increase `interval` or reduce the number of servers |
 
 With `--log.level=debug`, each test logs its full command line, which can be run by hand to reproduce the problem. The server list goes on stdin; its JSON is described in the [specification](spec.md#one-run-per-server).

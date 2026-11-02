@@ -4,6 +4,9 @@ interval: 10m
 test:
   duration: 5s
 
+stability:
+  enabled: true
+
 servers:
   - name: local
     url: http://librespeed:8080/

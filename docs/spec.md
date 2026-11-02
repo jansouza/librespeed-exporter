@@ -11,6 +11,8 @@ Measurements are made by [librespeed-cli](https://github.com/librespeed/speedtes
 
 The main use case is tracking the quality of an internet link over time (home, office, branch) and alerting when it drops below what was contracted.
 
+Optionally, the exporter also probes each server's latency continuously, the equivalent of the LibreSpeed web stability test, to catch short drops that a speed test every 30 minutes misses.
+
 ### Out of scope for v1
 
 - A web UI to run tests by hand.
@@ -44,6 +46,8 @@ librespeed-cli is also a Go module (`github.com/librespeed/speedtest-cli`), and 
 - the only documented public API is the command line. The internal packages can change between versions without notice.
 
 Running a child process isolates each test in its own process, allows killing a stuck test, and lets librespeed-cli be upgraded without rebuilding the exporter.
+
+The one exception is stability probing (see below). librespeed-cli has no such mode, and the web stability test is nothing more than repeated `GET` requests to the ping path, so the exporter sends those itself.
 
 ### Scheduled tests, not per scrape
 
@@ -149,6 +153,20 @@ So the exporter defaults to `ping_method: http`, which passes `--no-icmp` and al
 
 librespeed-cli always takes 10 ping samples. That cannot be changed from the command line.
 
+## Stability probing
+
+The LibreSpeed web UI (since v6.2.0) has a stability test, `stability.html`, that sends a `GET` to `backend/empty.php` at most every 200ms for a fixed duration and reports latency, jitter and the share of failed requests. librespeed-cli does not have it.
+
+The exporter offers the same measurement as continuous probing, which fits Prometheus better than a fixed-length test: with `stability.enabled: true`, every configured server gets one request to its `ping_path` every `stability.interval` (default 1s), indefinitely. Each request carries a random `r` parameter and `Cache-Control: no-cache`, like the web client. It is off by default, so upgrading does not start sending requests to public servers nobody asked to probe.
+
+- **Latency** is the time from the request being written to the first response byte (`net/http/httptrace`), which leaves out connection setup the way the web test does with the browser's Performance API. Connections are kept alive between probes.
+- **Failures** are transport errors, non-200 responses and probes exceeding `stability.timeout` (default 5s). They are request failures, not packet loss.
+- **Jitter** is the absolute difference between two consecutive successful probes. It is recorded in a histogram instead of the web test's weighted moving average, so the mean jitter over any window is `rate(sum) / rate(count)`. A failure or a pause resets it, so no jitter is computed across a gap.
+- **Pause during speed tests.** While librespeed-cli runs, the saturated link would show up as latency spikes every `interval`. The scheduler pauses probing for the duration of each speed test.
+- **Network settings.** Probes honor each server's `insecure_skip_verify` and `ca_file`, and the test's `ip_version` and `source_address`, plus the proxy environment variables. `test.interface` is not applied, since binding to an interface is OS-specific.
+- **Reload.** A reload restarts the probe loops with the new settings. Servers that remain keep their histograms and counters; removed servers lose their series. A server whose `ca_file` cannot be parsed is logged and not probed.
+- Failures are logged once when a server starts failing and once when it recovers, not on every probe.
+
 ## Metrics
 
 All metrics use the `librespeed_` prefix and Prometheus base units (seconds and bytes). Speed is exposed in bytes per second; in Grafana, use the `bytes/sec(SI)` unit, or multiply by 8 and use `bits/sec(SI)` to see Mbps.
@@ -191,6 +209,18 @@ These four metrics appear only after the first successful test against the serve
 | `librespeed_client_info` | gauge (always 1) | `server`, `ip`, `isp` | Public IP (`client.ip`) and ISP (`client.org`) from the last test. Off by default |
 | `librespeed_cli_info` | gauge (always 1) | `version` | Version of the librespeed-cli in use |
 | `librespeed_exporter_build_info` | gauge (always 1) | `version`, `revision`, `goversion`, ... | Exporter version |
+
+### Stability
+
+Present only while `stability.enabled` is true, for every server being probed.
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `librespeed_stability_latency_seconds` | histogram | `server` | Latency of successful probes |
+| `librespeed_stability_jitter_seconds` | histogram | `server` | Absolute latency difference between consecutive successful probes |
+| `librespeed_stability_requests_total` | counter | `server`, `result` | Probes sent; `result` is `success` or `failure` |
+
+The histograms use exponential buckets from 0.5ms to about 4s, and are also exposed as native histograms to clients that negotiate the protobuf format.
 
 `librespeed_client_info` is off by default (`collect_client_info: false`) because it exposes the public IP and starts a new series every time the IP changes, which is common on residential connections. When the server reports neither IP nor ISP (as servers on the local network do), the metric is not produced.
 
@@ -264,6 +294,11 @@ test:
   interface: ""             # --interface
   no_preallocate: false     # --no-pre-allocate
 
+stability:
+  enabled: false            # continuous latency probing, see "Stability probing"
+  interval: 1s              # at least 200ms
+  timeout: 5s
+
 servers:
   - name: home           # required, unique, becomes the "server" label
     url: https://speed.example.com/
@@ -291,6 +326,7 @@ The exporter refuses to start, with a clear log message, when:
 - `source_address` is not an IP address;
 - `source_address` and `interface` are both set (librespeed-cli does not accept both);
 - `timeout` is less than `phases × duration + 15s`, where `phases` is the number of enabled phases among download and upload. The 15s cover process startup, the IP lookup, ping and opening the connections;
+- `stability.interval` is under 200ms (the floor the web stability test uses), or `stability.timeout` is not greater than zero;
 - `ca_file` points to a file that does not exist.
 
 If `interval` is shorter than a full cycle (number of servers times `timeout`), the exporter only logs a warning, because the scheduler already prevents overlap (see below).
@@ -360,6 +396,7 @@ internal/config/           YAML loading, defaults and validation
 internal/runner/           builds the command line, runs librespeed-cli and parses its JSON
 internal/scheduler/        test cycles and single-run control
 internal/collector/        stores the latest results and exposes the metrics
+internal/stability/        continuous latency probing with its own HTTP client and metrics
 test/integration/          end-to-end test with the real librespeed-cli
 deploy/                    systemd, compose, alerts, dashboard
 docs/                      this specification, the user guide and plans
@@ -373,6 +410,7 @@ docs/                      this specification, the user guide and plans
 - JSON parser unit tests with fixtures recorded from librespeed-cli v1.0.14: normal output, upload disabled, server down (`null`), plus empty array, truncated JSON, unknown extra fields and zero download.
 - Execution tests with a fake librespeed-cli, re-executing the test binary itself (`os.Args[0]`, with an environment variable selecting the behavior). The fake covers success, exit code 1, a process that hangs until the timeout, one that ignores `SIGTERM`, and output over the limit.
 - Unit tests in `internal/config` for the defaults and every validation rule.
+- Stability tests against `httptest` servers: latency and jitter samples, failures and their log transitions, timeouts, pausing, reload, `ip_version`, `source_address` and TLS settings.
 - Collector tests comparing `/metrics` output with expected files (`testutil.CollectAndCompare`).
 - An optional integration test (build tag `integration`) with the real librespeed-cli against the official LibreSpeed container image, run in CI. It also catches JSON format changes when librespeed-cli is upgraded.
 - `promtool check metrics` in CI to validate metric names and types.

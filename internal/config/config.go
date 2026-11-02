@@ -40,8 +40,25 @@ type Config struct {
 	CollectClientInfo bool          `yaml:"collect_client_info"`
 	LibrespeedCLI     CLI           `yaml:"librespeed_cli"`
 	Test              Test          `yaml:"test"`
+	Stability         Stability     `yaml:"stability"`
 	Servers           []Server      `yaml:"servers"`
 }
+
+// Stability configures continuous latency probing, the equivalent of the
+// LibreSpeed web stability test. It sends small HTTP requests to each
+// server's ping path, independently of librespeed-cli.
+type Stability struct {
+	Enabled bool `yaml:"enabled"`
+	// Interval is the minimum time between the start of two probes to the
+	// same server.
+	Interval time.Duration `yaml:"interval"`
+	// Timeout bounds each probe; a probe that times out counts as failed.
+	Timeout time.Duration `yaml:"timeout"`
+}
+
+// MinStabilityInterval is the shortest allowed stability.interval, the same
+// floor the LibreSpeed web stability test uses.
+const MinStabilityInterval = 200 * time.Millisecond
 
 // CLI locates the librespeed-cli binary.
 type CLI struct {
@@ -95,6 +112,10 @@ func Default() Config {
 			UploadSize:  1024 * KiB,
 			HTTPTimeout: 15 * time.Second,
 			PingMethod:  PingHTTP,
+		},
+		Stability: Stability{
+			Interval: time.Second,
+			Timeout:  5 * time.Second,
 		},
 	}
 }
