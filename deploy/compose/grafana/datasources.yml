@@ -7,3 +7,7 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+    jsonData:
+      # Matches scrape_interval in prometheus.yml, so $__rate_interval spans
+      # enough samples for rate().
+      timeInterval: 1m

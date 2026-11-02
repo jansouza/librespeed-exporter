@@ -26,7 +26,7 @@ CLI_DIR   := $(CACHE_DIR)/librespeed-cli-$(LIBRESPEED_CLI_VERSION)
 COMPOSE   := $(DOCKER) compose -f test/integration/compose.yml
 PROMTOOL  := $(DOCKER) run --rm -i -v $(CURDIR):/work:ro -w /work --entrypoint promtool $(PROMETHEUS_IMAGE)
 
-.PHONY: all build test lint fmt integration docker check-deploy clean
+.PHONY: all build test lint fmt integration docker check-deploy dashboard clean
 
 all: lint test build
 
@@ -66,6 +66,10 @@ docker:
 check-deploy:
 	$(PROMTOOL) check rules deploy/prometheus/alerts.yml
 	$(PROMTOOL) check config --syntax-only deploy/compose/prometheus.yml
+
+# Regenerates the Grafana dashboard from its Python source.
+dashboard:
+	python3 deploy/grafana/dashboard.py > deploy/grafana/dashboard.json
 
 clean:
 	rm -rf $(BINARY) $(CACHE_DIR) dist
