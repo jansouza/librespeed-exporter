@@ -206,7 +206,7 @@ These four metrics appear only after the first successful test against the serve
 | Metric | Type | Labels | Description |
 |---|---|---|---|
 | `librespeed_server_info` | gauge (always 1) | `server`, `url` | Maps the server name to the configured URL |
-| `librespeed_client_info` | gauge (always 1) | `server`, `ip`, `isp` | Public IP (`client.ip`) and ISP (`client.org`) from the last test. Off by default |
+| `librespeed_client_info` | gauge (always 1) | `server`, `ip`, `isp` | Public IP (`client.ip`) and ISP (`client.org`) from the last successful test, or from the server's `ip_path` when librespeed-cli reports no IP. Off by default |
 | `librespeed_cli_info` | gauge (always 1) | `version` | Version of the librespeed-cli in use |
 | `librespeed_exporter_build_info` | gauge (always 1) | `version`, `revision`, `goversion`, ... | Exporter version |
 
@@ -222,7 +222,9 @@ Present only while `stability.enabled` is true, for every server being probed.
 
 The histograms use exponential buckets from 0.5ms to about 4s, and are also exposed as native histograms to clients that negotiate the protobuf format.
 
-`librespeed_client_info` is off by default (`collect_client_info: false`) because it exposes the public IP and starts a new series every time the IP changes, which is common on residential connections. When the server reports neither IP nor ISP (as servers on the local network do), the metric is not produced.
+`librespeed_client_info` is off by default (`collect_client_info: false`) because it exposes the public IP and starts a new series every time the IP changes, which is common on residential connections.
+
+librespeed-cli takes the IP and ISP from the `rawIspInfo` object the server's `getIP.php` returns. A server that does not look up the ISP (no ipinfo.io access, or the lookup turned off) answers with an empty `rawIspInfo`, and librespeed-cli then reports no IP either, although the server still sends it at the start of `processedString` (`203.0.113.7 - Unknown ISP`). In that case, after a successful test, the exporter requests `ip_path` with `isp=true` itself, with the same HTTP settings as the stability probes and a 10s timeout, and takes the IP from `processedString` (and the ISP from `rawIspInfo`, if present). The metric then has the IP and an empty `isp`. A private, loopback or link-local address (a server on the local network) is not reported, so the metric is not produced for those servers. A failed lookup is logged at debug level and leaves the result as it is.
 
 The exporter also exposes the standard process and Go runtime metrics from `client_golang`.
 
@@ -397,6 +399,8 @@ internal/runner/           builds the command line, runs librespeed-cli and pars
 internal/scheduler/        test cycles and single-run control
 internal/collector/        stores the latest results and exposes the metrics
 internal/stability/        continuous latency probing with its own HTTP client and metrics
+internal/clientinfo/       client IP and ISP lookup on the server's ip_path, when librespeed-cli reports no IP
+internal/httpclient/       HTTP client honoring the server's TLS and the test's ip_version and source_address
 test/integration/          end-to-end test with the real librespeed-cli
 deploy/                    systemd, compose, alerts, dashboard
 docs/                      this specification, the user guide and plans
@@ -411,6 +415,7 @@ docs/                      this specification, the user guide and plans
 - Execution tests with a fake librespeed-cli, re-executing the test binary itself (`os.Args[0]`, with an environment variable selecting the behavior). The fake covers success, exit code 1, a process that hangs until the timeout, one that ignores `SIGTERM`, and output over the limit.
 - Unit tests in `internal/config` for the defaults and every validation rule.
 - Stability tests against `httptest` servers: latency and jitter samples, failures and their log transitions, timeouts, pausing, reload, `ip_version`, `source_address` and TLS settings.
+- Client info tests: `getIP.php` responses with and without `rawIspInfo`, plain text, IPv6, non-public addresses and missing IPs, a lookup against an `httptest` server, and the scheduler only looking up when `collect_client_info` is on and librespeed-cli reported no IP.
 - Collector tests comparing `/metrics` output with expected files (`testutil.CollectAndCompare`).
 - An optional integration test (build tag `integration`) with the real librespeed-cli against the official LibreSpeed container image, run in CI. It also catches JSON format changes when librespeed-cli is upgraded.
 - `promtool check metrics` in CI to validate metric names and types.

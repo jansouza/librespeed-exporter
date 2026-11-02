@@ -27,17 +27,21 @@ Data flows in one direction, and each package knows only the one below it:
 
 ```
 cmd/librespeed-exporter ──► scheduler ──► runner (exec librespeed-cli)
-        │                       │
+        │                       │      └──► clientinfo (getIP.php, when the CLI reports no IP)
         └──► collector ◄────────┘ (RecordSuccess / RecordFailure / SetRunning)
         │
-        └──► stability (own HTTP client, paused while a speed test runs)
+        └──► stability (paused while a speed test runs)
+
+stability and clientinfo build their HTTP clients with httpclient.
 ```
 
 - `internal/config`: YAML loading with `KnownFields(true)`; defaults are prefilled into the struct before decoding, then server paths are completed. `Validate` returns all errors joined, plus non-fatal warnings separately.
 - `internal/runner`: one `librespeed-cli` process per server and per test. The server list goes on stdin (`--local-json -`, single server with `id` 1, `--server 1`) so the CLI can never pick another server. Stdout is capped at 1 MiB, stderr keeps a 4 KiB tail, the environment is filtered to an allowlist, and cancellation sends SIGTERM then SIGKILL after `WaitDelay` (Windows just kills). The CLI printing `null` with exit code 0 means the server failed its availability check (`ErrNoReport`). Unit conversion works on hundredths to avoid float noise (`msToSeconds`, `mbpsToBytesPerSecond`). No Prometheus imports here.
-- `internal/scheduler`: ticker-driven cycles that never overlap (a busy flag drops ticks), servers tested sequentially, random 0–10% jitter except on the `run_on_start` cycle. Config and runner are swapped together through an `atomic.Pointer` by `Update`; a cycle reads it once at its start. A test canceled by shutdown is not recorded as a failure.
+- `internal/scheduler`: ticker-driven cycles that never overlap (a busy flag drops ticks), servers tested sequentially, random 0–10% jitter except on the `run_on_start` cycle. Config and runner are swapped together through an `atomic.Pointer` by `Update`; a cycle reads it once at its start. A test canceled by shutdown is not recorded as a failure. With `collect_client_info`, a successful result without a client IP gets one from `clientinfo.Fetch` (replaceable `clientInfo` field, like `jitter`) before it is recorded.
+- `internal/clientinfo`: requests the server's `ip_path` with `isp=true`. librespeed-cli reads IP and ISP only from `rawIspInfo`, which is `""` on servers that do not look up the ISP, so it drops the IP too; `parse` falls back to the IP at the start of `processedString` and rejects non-public addresses (`ErrNotPublic`).
+- `internal/httpclient`: the `http.Client` for talking to a LibreSpeed server directly (TLS settings, `ca_file`, `ip_version`, `source_address`) and `URL` to join a server path.
 - `internal/collector`: holds per-server state and implements `prometheus.Collector` with const metrics built at scrape time, so servers removed on reload vanish without `DeleteLabelValues`. Result metrics appear only after the first success; counters start at zero for every label combination; a phase must be both enabled now and measured by the stored result to be exposed.
-- `internal/stability`: optional continuous latency probing (`stability.enabled`), the equivalent of the LibreSpeed web stability test, which librespeed-cli lacks. This is the only place the exporter speaks HTTP to LibreSpeed itself. One loop per server; latency is request-written to first-byte via `httptrace`; jitter is the absolute difference of consecutive successes (reset on failure or pause). The `Prober` owns its own histogram/counter vecs (not the collector) and drops removed servers on `Update`. `main` wraps the collector in `pausingRecorder` so `SetRunning` from the scheduler also pauses probing.
+- `internal/stability`: optional continuous latency probing (`stability.enabled`), the equivalent of the LibreSpeed web stability test, which librespeed-cli lacks. One loop per server; latency is request-written to first-byte via `httptrace`; jitter is the absolute difference of consecutive successes (reset on failure or pause). The `Prober` owns its own histogram/counter vecs (not the collector) and drops removed servers on `Update`. `main` wraps the collector in `pausingRecorder` so `SetRunning` from the scheduler also pauses probing.
 - `cmd/librespeed-exporter`: flags (kingpin + exporter-toolkit + promslog), startup checks (config, `librespeed-cli --version`), HTTP routes, and `reloader`, shared by SIGHUP and `POST /-/reload`. A reload is all-or-nothing; a changed `librespeed_cli.path` creates and version-checks a new runner before anything is applied, then collector, scheduler and prober are updated.
 
 ## Conventions

@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jansouza/librespeed-exporter/internal/clientinfo"
 	"github.com/jansouza/librespeed-exporter/internal/config"
 	"github.com/jansouza/librespeed-exporter/internal/runner"
 )
@@ -19,6 +20,9 @@ import (
 // maxJitter is the largest random delay before a cycle, as a fraction of the
 // interval.
 const maxJitter = 0.1
+
+// clientInfoTimeout bounds the client info lookup after a test.
+const clientInfoTimeout = 10 * time.Second
 
 // TestRunner runs one speed test. *runner.Runner implements it.
 type TestRunner interface {
@@ -51,15 +55,18 @@ type Scheduler struct {
 
 	// jitter returns a number in [0, 1); replaced in tests.
 	jitter func() float64
+	// clientInfo looks up the IP and ISP the server sees; replaced in tests.
+	clientInfo func(context.Context, config.Server, config.Test) (clientinfo.Info, error)
 }
 
 // New returns a Scheduler for cfg. Call Run to start it.
 func New(cfg *config.Config, r TestRunner, rec Recorder, logger *slog.Logger) *Scheduler {
 	s := &Scheduler{
-		recorder: rec,
-		logger:   logger,
-		updated:  make(chan struct{}, 1),
-		jitter:   rand.Float64,
+		recorder:   rec,
+		logger:     logger,
+		updated:    make(chan struct{}, 1),
+		jitter:     rand.Float64,
+		clientInfo: clientinfo.Fetch,
 	}
 	s.current.Store(&state{cfg: cfg, runner: r})
 	return s
@@ -164,6 +171,9 @@ func (s *Scheduler) test(ctx context.Context, st *state, srv config.Server) {
 		return
 	}
 
+	if st.cfg.CollectClientInfo && res.ClientIP == "" {
+		s.lookupClientInfo(ctx, st.cfg.Test, srv, &res, logger)
+	}
 	s.recorder.RecordSuccess(res)
 	logger.Info("Test finished",
 		"download_mbps", round2(res.DownloadBytesPerSecond*8/1e6),
@@ -174,6 +184,24 @@ func (s *Scheduler) test(ctx context.Context, st *state, srv config.Server) {
 		"bytes_received", res.BytesReceived,
 		"bytes_sent", res.BytesSent,
 	)
+}
+
+// lookupClientInfo asks the server's ip_path for the client IP, and the ISP
+// if librespeed-cli had none. librespeed-cli reports no IP when the server
+// does not look up the ISP, although the server still knows the IP. A failed
+// lookup leaves the result as it is.
+func (s *Scheduler) lookupClientInfo(ctx context.Context, test config.Test, srv config.Server, res *runner.Result, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(ctx, clientInfoTimeout)
+	defer cancel()
+	info, err := s.clientInfo(ctx, srv, test)
+	if err != nil {
+		logger.Debug("Client info lookup failed", "err", err)
+		return
+	}
+	res.ClientIP = info.IP
+	if res.ISP == "" {
+		res.ISP = info.ISP
+	}
 }
 
 func round2(v float64) float64 {
