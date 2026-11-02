@@ -26,3 +26,15 @@ groups:
         annotations:
           summary: "Download speed to {{ $labels.server }} is below 100 Mbps"
           description: "The 3-hour average download speed is {{ $value | humanize }}B/s."
+
+      - alert: LibrespeedStabilityFailures
+        # Needs stability.enabled. More than 5% of the probes failing.
+        expr: |
+          sum by (server) (rate(librespeed_stability_requests_total{result="failure"}[5m]))
+            / sum by (server) (rate(librespeed_stability_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stability probes to {{ $labels.server }} are failing"
+          description: "{{ $value | humanizePercentage }} of the stability probes to {{ $labels.server }} failed or timed out over the last 5 minutes."

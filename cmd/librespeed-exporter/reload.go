@@ -10,6 +10,7 @@ import (
 	"github.com/jansouza/librespeed-exporter/internal/config"
 	"github.com/jansouza/librespeed-exporter/internal/runner"
 	"github.com/jansouza/librespeed-exporter/internal/scheduler"
+	"github.com/jansouza/librespeed-exporter/internal/stability"
 )
 
 // newRunnerFunc creates the runner for a configured librespeed-cli path and
@@ -35,6 +36,7 @@ type reloader struct {
 	logger    *slog.Logger
 	collector *collector.Collector
 	scheduler *scheduler.Scheduler
+	prober    *stability.Prober
 	newRunner newRunnerFunc
 
 	mu      sync.Mutex
@@ -82,5 +84,6 @@ func (r *reloader) apply(ctx context.Context) error {
 	r.runner = run
 	r.collector.SetConfig(cfg)
 	r.scheduler.Update(cfg, run)
+	r.prober.Update(cfg)
 	return nil
 }

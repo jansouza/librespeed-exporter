@@ -4,6 +4,8 @@ A Prometheus exporter that periodically measures download, upload, latency and j
 
 Measurements are made by [librespeed-cli](https://github.com/librespeed/speedtest-cli), the project's official client. The exporter runs the CLI on a fixed interval, one server at a time, and keeps the latest result. A Prometheus scrape only reads that result: it never triggers a test or waits for one.
 
+Optionally, it also probes each server's latency continuously, like the LibreSpeed web stability test, to catch short drops between speed tests (`stability.enabled`, see [docs/usage.md](docs/usage.md#stability-probing)).
+
 ## Installation
 
 ### Container
@@ -14,7 +16,7 @@ The image already includes librespeed-cli.
 docker run -d --name librespeed-exporter \
   -p 9469:9469 \
   -v "$PWD/config.yml:/etc/librespeed-exporter/config.yml:ro" \
-  ghcr.io/jansouza/librespeed-exporter:0.1
+  ghcr.io/jansouza/librespeed-exporter:0.2
 ```
 
 Images are available for `linux/amd64`, `linux/arm64` and `linux/arm/v7` (Raspberry Pi).
@@ -62,6 +64,9 @@ Each test really transfers what it measures. On a 500 Mbps link, a test with the
 | `librespeed_last_success_timestamp_seconds` | When the last successful test finished |
 | `librespeed_tests_total` | Tests run, by result |
 | `librespeed_transferred_bytes_total` | Bytes transferred by tests, by direction |
+| `librespeed_stability_latency_seconds` | Histogram of continuous probe latency (with `stability.enabled`) |
+| `librespeed_stability_jitter_seconds` | Histogram of the latency difference between consecutive probes |
+| `librespeed_stability_requests_total` | Stability probes, by result |
 
 Speeds are in bytes per second, following the Prometheus convention. To see Mbps, multiply by 8 and use Grafana's `bits/sec(SI)` unit. The full list, including the state and info metrics, is in [docs/usage.md](docs/usage.md#metrics).
 
@@ -79,7 +84,7 @@ librespeed_tests_total{result="success",server="local"} 1
 
 ## Alerts and dashboard
 
-[deploy/prometheus/alerts.yml](deploy/prometheus/alerts.yml) has rules for failing tests, stale results and download speed below a threshold. [deploy/grafana/dashboard.json](deploy/grafana/dashboard.json) is a dashboard with speed, latency, test status and data used per day.
+[deploy/prometheus/alerts.yml](deploy/prometheus/alerts.yml) has rules for failing tests, stale results, download speed below a threshold and failing stability probes. [deploy/grafana/dashboard.json](deploy/grafana/dashboard.json) is a dashboard with the latest results per server, download, upload, ping and jitter over time, success rate, data used per day, stability latency (percentiles and heatmap), and markers on every chart where a speed test failed.
 
 To see everything working, [deploy/compose](deploy/compose/docker-compose.yml) starts a local LibreSpeed server, the exporter, Prometheus with the alerts and Grafana with the dashboard:
 
@@ -99,6 +104,7 @@ Grafana is at http://127.0.0.1:3000 (user and password `admin`).
 | `make lint` | golangci-lint |
 | `make integration` | Start LibreSpeed in a container, download librespeed-cli and test the exporter end to end |
 | `make check-deploy` | Validate the alert rules and the Prometheus configuration with `promtool` |
+| `make dashboard` | Regenerate `deploy/grafana/dashboard.json` from `deploy/grafana/dashboard.py` |
 | `make docker` | Build the container image |
 
 The project needs Go 1.26 and, for `integration`, `check-deploy` and `docker`, Docker as well. The design is described in [docs/spec.md](docs/spec.md).

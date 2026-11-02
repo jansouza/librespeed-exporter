@@ -60,6 +60,11 @@ func TestLoadFull(t *testing.T) {
 			SourceAddress: "2001:db8::10",
 			NoPreallocate: true,
 		},
+		Stability: Stability{
+			Enabled:  true,
+			Interval: 500 * time.Millisecond,
+			Timeout:  2 * time.Second,
+		},
 		Servers: []Server{
 			{
 				Name:         "home",
@@ -176,6 +181,8 @@ func TestParseErrors(t *testing.T) {
 		{"bad source address", "test:\n  source_address: eth0\n" + server, []string{"test.source_address"}},
 		{"source and interface", "test:\n  source_address: 192.0.2.1\n  interface: eth0\n" + server, []string{"cannot be set together"}},
 		{"timeout too short", "timeout: 40s\n" + server, []string{"timeout: must be at least 45s"}},
+		{"stability interval too short", "stability:\n  interval: 100ms\n" + server, []string{"stability.interval: must be at least 200ms"}},
+		{"zero stability timeout", "stability:\n  timeout: 0s\n" + server, []string{"stability.timeout: must be greater than zero"}},
 		{"empty server name", "servers:\n  - url: http://a/\n", []string{"servers[0].name: must not be empty"}},
 		{"duplicate server name", "servers:\n  - name: a\n    url: http://a/\n  - name: a\n    url: http://b/\n", []string{`servers[1].name: "a" is already used by servers[0]`}},
 		{"empty url", "servers:\n  - name: a\n", []string{"servers[0].url: must not be empty"}},

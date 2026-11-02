@@ -44,4 +44,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: make check-deploy
+      - name: Dashboard JSON matches deploy/grafana/dashboard.py
+        run: make dashboard && git diff --exit-code deploy/grafana/dashboard.json
       - run: docker build .

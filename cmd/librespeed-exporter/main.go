@@ -24,6 +24,7 @@ import (
 	"github.com/jansouza/librespeed-exporter/internal/collector"
 	"github.com/jansouza/librespeed-exporter/internal/config"
 	"github.com/jansouza/librespeed-exporter/internal/scheduler"
+	"github.com/jansouza/librespeed-exporter/internal/stability"
 )
 
 const (
@@ -77,20 +78,23 @@ func run() int {
 
 	coll := collector.New(cfg)
 	coll.SetCLIVersion(cliVersion)
+	prober := stability.New(cfg, logger)
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(
 		coll,
+		prober,
 		versioncollector.NewCollector("librespeed_exporter"),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		collectors.NewGoCollector(),
 	)
 
-	sched := scheduler.New(cfg, testRunner, coll, logger)
+	sched := scheduler.New(cfg, testRunner, pausingRecorder{coll, prober}, logger)
 	rl := &reloader{
 		path:      *configFile,
 		logger:    logger,
 		collector: coll,
 		scheduler: sched,
+		prober:    prober,
 		newRunner: newCLIRunner,
 		cliPath:   cfg.LibrespeedCLI.Path,
 		runner:    testRunner,
@@ -110,6 +114,11 @@ func run() int {
 	go func() {
 		sched.Run(ctx)
 		close(schedDone)
+	}()
+	proberDone := make(chan struct{})
+	go func() {
+		prober.Run(ctx)
+		close(proberDone)
 	}()
 
 	hup := make(chan os.Signal, 1)
@@ -148,5 +157,18 @@ func run() int {
 		logger.Error("HTTP server shutdown failed", "err", err)
 	}
 	<-schedDone
+	<-proberDone
 	return exitCode
+}
+
+// pausingRecorder pauses stability probing while a speed test runs, so the
+// saturated link does not show up as latency spikes.
+type pausingRecorder struct {
+	*collector.Collector
+	prober *stability.Prober
+}
+
+func (r pausingRecorder) SetRunning(running bool) {
+	r.prober.SetPaused(running)
+	r.Collector.SetRunning(running)
 }

@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -19,6 +21,7 @@ import (
 	"github.com/jansouza/librespeed-exporter/internal/config"
 	"github.com/jansouza/librespeed-exporter/internal/runner"
 	"github.com/jansouza/librespeed-exporter/internal/scheduler"
+	"github.com/jansouza/librespeed-exporter/internal/stability"
 )
 
 type nopRunner struct{}
@@ -55,6 +58,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		logger:    logger,
 		collector: env.coll,
 		scheduler: scheduler.New(cfg, nopRunner{}, env.coll, logger),
+		prober:    stability.New(cfg, logger),
 		newRunner: func(_ context.Context, path string) (scheduler.TestRunner, string, error) {
 			env.runnerArgs = append(env.runnerArgs, path)
 			if env.runnerErr != nil {
@@ -224,4 +228,51 @@ librespeed_cli_info{version="1.0.14"} 1
 # TYPE librespeed_server_info gauge
 librespeed_server_info{server="a",url="http://a/"} 1
 `, "librespeed_config_last_reload_successful", "librespeed_cli_info", "librespeed_server_info")
+}
+
+func TestReloadEnablesStabilityAndSpeedTestsPauseIt(t *testing.T) {
+	var hits atomic.Int64
+	ping := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	t.Cleanup(ping.Close)
+
+	env := newTestEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		env.rl.prober.Run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	env.write(t, "stability:\n  enabled: true\n  interval: 200ms\nservers:\n  - name: a\n    url: "+ping.URL+"/\n")
+	if code, body := env.do(t, http.MethodPost, "/-/reload"); code != http.StatusOK {
+		t.Fatalf("POST /-/reload = %d %q", code, body)
+	}
+	waitFor(t, func() bool { return hits.Load() > 0 })
+
+	// The scheduler reports a running speed test through the recorder.
+	rec := pausingRecorder{env.coll, env.rl.prober}
+	rec.SetRunning(true)
+	time.Sleep(300 * time.Millisecond) // let an in-flight probe finish
+	paused := hits.Load()
+	time.Sleep(500 * time.Millisecond)
+	if hits.Load() != paused {
+		t.Error("stability probes sent while a speed test runs")
+	}
+	rec.SetRunning(false)
+	waitFor(t, func() bool { return hits.Load() > paused })
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not met within 5s")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

@@ -6,7 +6,7 @@ Issue: not created yet
 
 ## Overview
 
-This plan splits the v1 implementation described in the specification into nine phases. Each phase ends with tested code and can become its own PR.
+This plan splits the v1 implementation described in the specification into nine phases, plus a tenth added after them for stability probing. Each phase ends with tested code and can become its own PR.
 
 The order follows the dependencies between packages: configuration first, since every other package uses it; then runner and collector, which do not depend on each other; then the scheduler, which ties them together; and finally `main`, packaging and documentation.
 
@@ -223,7 +223,7 @@ Status: [x] done
 
 ### Phase 9: documentation and first release
 
-Status: [ ] in progress (release pending)
+Status: [x] done
 
 **Intent.** Make the project usable by someone who never read the spec, and settle the open questions that block the release.
 
@@ -244,7 +244,33 @@ Status: [ ] in progress (release pending)
 - [x] Default port: keep `9469`. It is listed for script_exporter in the Prometheus port allocation wiki; kept on purpose and not registered.
 - [x] Bytes or bits: bytes, following the Prometheus convention.
 - [x] All documentation, the specification, this plan and the example configuration in English.
-- [ ] Publish `v0.1.0`.
+- [x] Publish `v0.1.0`.
+
+### Phase 10: stability probing (`internal/stability`)
+
+Status: [x] done
+
+**Intent.** Offer the LibreSpeed web stability test (`stability.html`, since LibreSpeed v6.2.0), which librespeed-cli lacks, as continuous probing that fits Prometheus.
+
+**Expected outcome.** With `stability.enabled: true`, each server's `ping_path` is probed every `stability.interval`, and latency, jitter and failures are exposed as two histograms and a counter. Probing pauses during speed tests and follows reloads.
+
+**Files**
+
+- `internal/config/config.go`, `internal/config/validate.go`: `Stability` section (`enabled`, `interval` ≥ 200ms, `timeout`), off by default.
+- `internal/stability/client.go`: per-server HTTP client honoring TLS settings, `ip_version`, `source_address` and proxies; latency via `httptrace`.
+- `internal/stability/prober.go`: `Prober` with `Run`, `Update` and `SetPaused`, one loop per server, logging on state transitions.
+- `internal/stability/metrics.go`: `librespeed_stability_latency_seconds`, `librespeed_stability_jitter_seconds` and `librespeed_stability_requests_total`.
+- `cmd/librespeed-exporter/main.go`, `reload.go`: registration, `pausingRecorder` and reload wiring.
+- `deploy/grafana/dashboard.json`, `deploy/prometheus/alerts.yml`, docs.
+
+**Tasks**
+
+- [x] Configuration, defaults, validation and example file.
+- [x] Probe client and loop; jitter reset on failure and pause; failures logged once per transition.
+- [x] Pause while a speed test runs, through the recorder the scheduler already calls.
+- [x] Reload: loops restart with the new settings, remaining servers keep their series, removed ones are dropped.
+- [x] Tests against `httptest` servers, plus a main test for reload and pausing, and the integration test with the real LibreSpeed image.
+- [x] Dashboard row (latency percentiles, mean jitter, failed share) and the `LibrespeedStabilityFailures` alert, checked against a running Prometheus and Grafana.
 
 ## Out of scope for this plan
 

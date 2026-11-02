@@ -66,6 +66,13 @@ func (c *Config) Validate() (warnings []string, err error) {
 		fail("timeout", "must be at least %s for the configured test phases, got %s", minTimeout, c.Timeout)
 	}
 
+	if c.Stability.Interval < MinStabilityInterval {
+		fail("stability.interval", "must be at least %s, got %s", MinStabilityInterval, c.Stability.Interval)
+	}
+	if c.Stability.Timeout <= 0 {
+		fail("stability.timeout", "must be greater than zero")
+	}
+
 	if len(c.Servers) == 0 {
 		fail("servers", "at least one server must be configured")
 	}

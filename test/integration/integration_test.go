@@ -52,6 +52,9 @@ librespeed_cli:
   path: %s
 test:
   duration: 2s
+stability:
+  enabled: true
+  interval: 200ms
 servers:
   - name: local
     url: %s
@@ -80,14 +83,17 @@ servers:
 	})
 
 	// Both servers are tested on start; the cycle is over once both have
-	// an up series.
+	// an up series. Stability probing pauses during the speed tests, so also
+	// wait for it to resume and reach the up server.
 	var families map[string]*dto.MetricFamily
 	var raw []byte
 	deadline := time.Now().Add(90 * time.Second)
 	for {
 		raw, families = scrape(t, "http://"+addr+"/metrics")
 		if families != nil && len(families["librespeed_up"].GetMetric()) == 2 {
-			break
+			if v, ok := metrics(families).get("librespeed_stability_requests_total", map[string]string{"server": "local", "result": "success"}); ok && v >= 3 {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("no complete test cycle within 90s; last scrape:\n%s", raw)
@@ -137,6 +143,17 @@ servers:
 	expect("librespeed_server_info", map[string]string{"server": "local", "url": serverURL}, equals(1), "1")
 	expect("librespeed_cli_info", nil, equals(1), "1")
 	expect("librespeed_exporter_build_info", nil, equals(1), "1")
+	expect("librespeed_stability_requests_total", map[string]string{"server": "down", "result": "failure"}, positive, "> 0")
+	expect("librespeed_stability_requests_total", map[string]string{"server": "down", "result": "success"}, equals(0), "0")
+	if h := families["librespeed_stability_latency_seconds"]; h == nil || len(h.GetMetric()) != 2 {
+		t.Errorf("librespeed_stability_latency_seconds has %d series, want 2", len(h.GetMetric()))
+	} else {
+		for _, metric := range h.GetMetric() {
+			if lp := metric.GetLabel(); len(lp) == 1 && lp[0].GetValue() == "local" && metric.GetHistogram().GetSampleCount() == 0 {
+				t.Error("no stability latency samples for the up server")
+			}
+		}
+	}
 	if _, ok := m.get("librespeed_last_success_timestamp_seconds", down); ok {
 		t.Error("librespeed_last_success_timestamp_seconds exposed for a server that never succeeded")
 	}
