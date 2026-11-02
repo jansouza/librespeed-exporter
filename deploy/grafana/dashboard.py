@@ -9,6 +9,11 @@ import json, sys
 DS = {"type": "prometheus", "uid": "${datasource}"}
 SEL = 'server=~"$server"'
 RATE = "[$__rate_interval]"
+# Min interval for panels that use RATE. A data source without a scrape
+# interval makes Grafana assume 15s and resolve $__rate_interval to 1m, a
+# single sample at a 60s scrape, so rate() returns nothing. 2m keeps the
+# window above 2m15s: two samples at scrape intervals up to 60s.
+RATE_MIN_INTERVAL = "2m"
 _id = 0
 
 def g(metric):
@@ -97,10 +102,15 @@ panels = [
            target(g("librespeed_ping_seconds"), ref="C", instant=True, range=False, format="table"),
            target(g("librespeed_jitter_seconds"), ref="D", instant=True, range=False, format="table"),
            target(g("librespeed_up"), ref="E", instant=True, range=False, format="table"),
-           target("time() - " + g("librespeed_last_success_timestamp_seconds"), ref="F", instant=True, range=False, format="table")],
-          "none", "Latest result of each server. " + stale_help,
+           target("time() - " + g("librespeed_last_success_timestamp_seconds"), ref="F", instant=True, range=False, format="table"),
+           # Only the labels matter; the value is always 1.
+           target(f"max by (server, isp, ip) (librespeed_client_info{{{SEL}}})", ref="G", instant=True, range=False,
+                  format="table")],
+          "none", "Latest result of each server. " + stale_help + " ISP and public IP need collect_client_info: true; "
+          "the IP is left out for servers on the local network.",
           {"showHeader": True, "cellHeight": "sm", "sortBy": [{"displayName": "Server", "desc": False}]},
-          {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}},
+          # Grafana's default 150px minimum makes 9 columns scroll on a 1280px screen.
+          {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "minWidth": 100}},
           [{"matcher": {"id": "byName", "options": n}, "properties": [{"id": "unit", "value": u}]}
            for n, u in (("Download", "bps"), ("Upload", "bps"), ("Ping", "s"), ("Jitter", "s"))]
           + [{"matcher": {"id": "byName", "options": "Last test"},
@@ -110,16 +120,19 @@ panels = [
               "properties": [{"id": "unit", "value": "s"}, {"id": "decimals", "value": 0},
                              {"id": "color", "value": stale["color"]},
                              {"id": "thresholds", "value": stale["thresholds"]},
-                             {"id": "custom.cellOptions", "value": {"type": "color-text"}}]}],
+                             {"id": "custom.cellOptions", "value": {"type": "color-text"}}]}]
+          # ISP names run long ("AS28573 Claro NXT Telecomunicacoes Ltda"). A fixed width, unlike
+          # minWidth, is taken out before the other columns share the rest, so the table does not scroll.
+          + [{"matcher": {"id": "byName", "options": "ISP"}, "properties": [{"id": "custom.width", "value": 240}]}],
           transformations=[
               {"id": "merge", "options": {}},
               {"id": "organize", "options": {
-                  "excludeByName": {"Time": True},
+                  "excludeByName": {"Time": True, "Value #G": True},
                   "renameByName": {"server": "Server", "Value #A": "Download", "Value #B": "Upload",
                                    "Value #C": "Ping", "Value #D": "Jitter", "Value #E": "Last test",
-                                   "Value #F": "Since last success"},
+                                   "Value #F": "Since last success", "isp": "ISP", "ip": "Public IP"},
                   "indexByName": {"server": 0, "Value #A": 1, "Value #B": 2, "Value #C": 3,
-                                  "Value #D": 4, "Value #E": 5, "Value #F": 6}}}]),
+                                  "Value #D": 4, "Value #E": 5, "Value #F": 6, "isp": 7, "ip": 8}}}]),
 
     # Download and upload get separate panels: each reads against its own
     # range, and asymmetric links (e.g. 500/50 Mbps) do not flatten upload.
@@ -154,16 +167,19 @@ panels = [
           [target(f'histogram_quantile({q}, sum by (server, le) (rate(librespeed_stability_latency_seconds_bucket{{{SEL}}}{RATE})))',
                   "{{server}} p" + str(int(q * 100)), ref)
            for q, ref in ((0.5, "A"), (0.95, "B"), (0.99, "C"))], "s",
-          "Latency percentiles of the continuous stability probes. Paused during speed tests.", None, line_field),
+          "Latency percentiles of the continuous stability probes. Paused during speed tests.", None, line_field,
+          interval=RATE_MIN_INTERVAL),
     panel("timeseries", "Stability jitter", (8, 35, 8, 8),
           [target(rate("librespeed_stability_jitter_seconds_sum") + " / " + rate("librespeed_stability_jitter_seconds_count"),
                   "{{server}}")], "s",
-          "Mean latency difference between consecutive stability probes.", None, line_field),
+          "Mean latency difference between consecutive stability probes.", None, line_field,
+          interval=RATE_MIN_INTERVAL),
     panel("timeseries", "Failed stability probes", (16, 35, 8, 8),
           [target(rate("librespeed_stability_requests_total", ',result="failure"') + " / " + rate("librespeed_stability_requests_total"),
                   "{{server}}")], "percentunit",
           "Share of stability probes that failed or timed out.", None,
-          {"min": 0, "custom": {"drawStyle": "line", "lineWidth": 1, "axisSoftMax": 0.1}}),
+          {"min": 0, "custom": {"drawStyle": "line", "lineWidth": 1, "axisSoftMax": 0.1}},
+          interval=RATE_MIN_INTERVAL),
     # The full latency distribution over time, one heatmap per server.
     panel("heatmap", "Stability latency distribution: $server", (0, 43, 24, 8),
           [target(f'sum by (le) (increase(librespeed_stability_latency_seconds_bucket{{{SEL}}}{RATE}))',
@@ -176,7 +192,7 @@ panels = [
            "cellGap": 1, "showValue": "never", "legend": {"show": True},
            "tooltip": {"mode": "single", "yHistogram": True, "showColorScale": True},
            "filterValues": {"le": 1e-9}},
-          repeat="server", repeatDirection="v", maxPerRow=1),
+          repeat="server", repeatDirection="v", maxPerRow=1, interval=RATE_MIN_INTERVAL),
 ]
 
 dashboard = {

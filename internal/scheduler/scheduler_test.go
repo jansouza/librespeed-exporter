@@ -12,6 +12,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/jansouza/librespeed-exporter/internal/clientinfo"
 	"github.com/jansouza/librespeed-exporter/internal/config"
 	"github.com/jansouza/librespeed-exporter/internal/runner"
 )
@@ -26,19 +27,22 @@ type fakeRunner struct {
 	start time.Time
 	took  time.Duration
 	fail  map[string]error
+	// client is the IP and ISP librespeed-cli reports, per server.
+	client map[string]clientinfo.Info
 
 	mu    sync.Mutex
 	calls []call
 }
 
 func newFakeRunner(took time.Duration) *fakeRunner {
-	return &fakeRunner{start: time.Now(), took: took, fail: map[string]error{}}
+	return &fakeRunner{start: time.Now(), took: took, fail: map[string]error{}, client: map[string]clientinfo.Info{}}
 }
 
 func (f *fakeRunner) Run(ctx context.Context, req runner.Request) (runner.Result, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, call{req.Server.Name, time.Since(f.start)})
 	err := f.fail[req.Server.Name]
+	client := f.client[req.Server.Name]
 	f.mu.Unlock()
 
 	res := runner.Result{Server: req.Server.Name, StartedAt: time.Now()}
@@ -53,6 +57,7 @@ func (f *fakeRunner) Run(ctx context.Context, req runner.Request) (runner.Result
 		return res, err
 	}
 	res.DownloadBytesPerSecond = 1e6
+	res.ClientIP, res.ISP = client.IP, client.ISP
 	return res, nil
 }
 
@@ -67,12 +72,14 @@ type fakeRecorder struct {
 	successes []string
 	failures  []string
 	running   []bool
+	results   []runner.Result // successful ones
 }
 
 func (r *fakeRecorder) RecordSuccess(res runner.Result) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.successes = append(r.successes, res.Server)
+	r.results = append(r.results, res)
 }
 
 func (r *fakeRecorder) RecordFailure(res runner.Result) {
@@ -253,6 +260,67 @@ func TestFailureDoesNotStopOtherServers(t *testing.T) {
 		}
 		h.stop()
 	})
+}
+
+func TestClientInfoLookup(t *testing.T) {
+	looked := clientinfo.Info{IP: "203.0.113.8", ISP: "lookup ISP"}
+	tests := []struct {
+		name    string
+		collect bool
+		cli     clientinfo.Info
+		err     error
+		lookups int
+		want    clientinfo.Info
+	}{
+		{name: "collect_client_info off", cli: clientinfo.Info{}, lookups: 0, want: clientinfo.Info{}},
+		{name: "CLI reported the IP", collect: true, cli: clientinfo.Info{IP: "203.0.113.7", ISP: "cli ISP"}, lookups: 0,
+			want: clientinfo.Info{IP: "203.0.113.7", ISP: "cli ISP"}},
+		{name: "CLI reported nothing", collect: true, lookups: 1, want: looked},
+		{name: "CLI reported only the ISP", collect: true, cli: clientinfo.Info{ISP: "cli ISP"}, lookups: 1,
+			want: clientinfo.Info{IP: "203.0.113.8", ISP: "cli ISP"}},
+		{name: "lookup failed", collect: true, err: clientinfo.ErrNotPublic, lookups: 1, want: clientinfo.Info{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cfg := testConfig(time.Hour, true, "a")
+				cfg.CollectClientInfo = tt.collect
+				var lookups int
+				h := start(t, cfg, time.Second, func(h *harness) {
+					h.runner.client["a"] = tt.cli
+					h.s.clientInfo = func(_ context.Context, srv config.Server, _ config.Test) (clientinfo.Info, error) {
+						lookups++
+						if srv.Name != "a" {
+							t.Errorf("looked up server %q", srv.Name)
+						}
+						if tt.err != nil {
+							return clientinfo.Info{}, tt.err
+						}
+						return looked, nil
+					}
+				})
+				time.Sleep(time.Minute)
+				synctest.Wait()
+
+				h.rec.mu.Lock()
+				results := append([]runner.Result(nil), h.rec.results...)
+				h.rec.mu.Unlock()
+				if len(results) != 1 {
+					t.Fatalf("got %d successful results, want 1", len(results))
+				}
+				if got := (clientinfo.Info{IP: results[0].ClientIP, ISP: results[0].ISP}); got != tt.want {
+					t.Errorf("recorded %+v, want %+v", got, tt.want)
+				}
+				if lookups != tt.lookups {
+					t.Errorf("%d lookups, want %d", lookups, tt.lookups)
+				}
+				if tt.err != nil && !strings.Contains(h.logs.String(), "Client info lookup failed") {
+					t.Errorf("failed lookup not logged:\n%s", h.logs)
+				}
+				h.stop()
+			})
+		})
+	}
 }
 
 func TestUpdateChangesIntervalAndServers(t *testing.T) {

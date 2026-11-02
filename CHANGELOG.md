@@ -4,6 +4,16 @@ Notable changes to librespeed-exporter. The format follows [Keep a Changelog](ht
 
 ## [Unreleased]
 
+### Added
+
+- Dashboard: ISP and public IP columns in the "Latest results per server" table, from `librespeed_client_info` (needs `collect_client_info: true`).
+
+### Fixed
+
+- `librespeed_client_info` was missing for servers that do not look up the ISP: they answer `getIP.php` with an empty `rawIspInfo`, and librespeed-cli then drops the IP too. The exporter now requests the server's `ip_path` itself in that case and reports the IP, with an empty `isp`. Private, loopback and link-local addresses are not reported.
+
+- Dashboard: the stability panels showed no data with a Prometheus data source that has no scrape interval set and a 60s scrape. Grafana then assumes 15s and resolves `$__rate_interval` to 1m, a single sample. The stability panels now have a 2m minimum interval.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added

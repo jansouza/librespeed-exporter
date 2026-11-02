@@ -24,7 +24,7 @@ The file is YAML. Only `servers` is required; [librespeed-exporter.example.yml](
 | `interval` | `30m` | Time between the start of two cycles. Each cycle tests every server in sequence |
 | `run_on_start` | `true` | Run a cycle at startup, without waiting for the first interval |
 | `timeout` | `2m` | Maximum duration of one librespeed-cli run. When exceeded, the process gets `SIGTERM` and, 5s later, `SIGKILL` |
-| `collect_client_info` | `false` | Expose `librespeed_client_info` with the public IP and ISP |
+| `collect_client_info` | `false` | Expose `librespeed_client_info` with the public IP and ISP. When the server does not look up the ISP, the exporter gets the IP from the server's `ip_path` itself and leaves `isp` empty |
 | `librespeed_cli.path` | empty | Path to librespeed-cli. Empty means looking it up in `PATH` |
 
 Each scheduled cycle starts after a random delay of up to 10% of the interval, so several exporters started together do not test the same server at the same moment. The `run_on_start` cycle has no such delay. If a cycle is still running when the next one is due, the next one is skipped and a warning is logged.
@@ -147,7 +147,7 @@ Only while `stability.enabled` is true.
 | Metric | Labels | Description |
 |---|---|---|
 | `librespeed_server_info` | `server`, `url` | Configured servers |
-| `librespeed_client_info` | `server`, `ip`, `isp` | IP and ISP seen by the server. Only with `collect_client_info: true` |
+| `librespeed_client_info` | `server`, `ip`, `isp` | IP and ISP seen by the server. Only with `collect_client_info: true`. `isp` is empty when the server does not look it up; servers on the local network produce no series |
 | `librespeed_cli_info` | `version` | librespeed-cli version |
 | `librespeed_exporter_build_info` | `version`, `revision`, `goversion`, ... | Exporter version |
 

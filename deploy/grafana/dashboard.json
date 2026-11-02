@@ -431,7 +431,7 @@
       "id": 7,
       "type": "table",
       "title": "Latest results per server",
-      "description": "Latest result of each server. Turns orange after 2h and red after 3h, when the LibrespeedResultsStale alert fires (assumes the default 30m interval).",
+      "description": "Latest result of each server. Turns orange after 2h and red after 3h, when the LibrespeedResultsStale alert fires (assumes the default 30m interval). ISP and public IP need collect_client_info: true; the IP is left out for servers on the local network.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -514,6 +514,18 @@
           "instant": true,
           "range": false,
           "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (server, isp, ip) (librespeed_client_info{server=~\"$server\"})",
+          "legendFormat": "",
+          "refId": "G",
+          "instant": true,
+          "range": false,
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -523,7 +535,8 @@
             "align": "auto",
             "cellOptions": {
               "type": "auto"
-            }
+            },
+            "minWidth": 100
           }
         },
         "overrides": [
@@ -656,6 +669,18 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ISP"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
           }
         ]
       },
@@ -678,7 +703,8 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "Time": true,
+              "Value #G": true
             },
             "renameByName": {
               "server": "Server",
@@ -687,7 +713,9 @@
               "Value #C": "Ping",
               "Value #D": "Jitter",
               "Value #E": "Last test",
-              "Value #F": "Since last success"
+              "Value #F": "Since last success",
+              "isp": "ISP",
+              "ip": "Public IP"
             },
             "indexByName": {
               "server": 0,
@@ -696,7 +724,9 @@
               "Value #C": 3,
               "Value #D": 4,
               "Value #E": 5,
-              "Value #F": 6
+              "Value #F": 6,
+              "isp": 7,
+              "ip": 8
             }
           }
         }
@@ -978,7 +1008,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "interval": "2m"
     },
     {
       "id": 15,
@@ -1015,7 +1046,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "interval": "2m"
     },
     {
       "id": 16,
@@ -1054,7 +1086,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "interval": "2m"
     },
     {
       "id": 17,
@@ -1121,7 +1154,8 @@
       },
       "repeat": "server",
       "repeatDirection": "v",
-      "maxPerRow": 1
+      "maxPerRow": 1,
+      "interval": "2m"
     }
   ]
 }
