@@ -15,7 +15,7 @@ services:
   exporter:
     build: ../..
     # To use the published image instead of building it:
-    # image: ghcr.io/jansouza/librespeed-exporter:0.1
+    # image: ghcr.io/jansouza/librespeed-exporter:0.2
     volumes:
       - ./librespeed-exporter.yml:/etc/librespeed-exporter/config.yml:ro
     ports:
