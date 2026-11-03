@@ -197,6 +197,8 @@ With `stability.enabled: true`, the exporter sends one small HTTP request to eac
 
 The example alert `LibrespeedStabilityFailures` fires when more than 5% of the probes fail for 10 minutes, and the example dashboard has a stability row with latency percentiles, jitter and failed requests.
 
+![Stability row of the example dashboard: latency percentiles, jitter, failed probes and a latency heatmap](images/dashboard-stability.png)
+
 ## Kubernetes
 
 Run a single replica with the `Recreate` deployment strategy. With `RollingUpdate`, the new pod starts testing while the old one is still running, so their tests can overlap and skew each other's results.

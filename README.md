@@ -86,6 +86,8 @@ librespeed_tests_total{result="success",server="local"} 1
 
 [deploy/prometheus/alerts.yml](deploy/prometheus/alerts.yml) has rules for failing tests, stale results, download speed below a threshold and failing stability probes. [deploy/grafana/dashboard.json](deploy/grafana/dashboard.json) is a dashboard with the latest results per server (with ISP and public IP when `collect_client_info` is on), download, upload, ping and jitter over time, success rate, data used per day, stability latency (percentiles and heatmap), and markers on every chart where a speed test failed.
 
+![Grafana dashboard with the latest results per server and download, upload, ping and jitter over time](docs/images/dashboard.png)
+
 To see everything working, [deploy/compose](deploy/compose/docker-compose.yml) starts a local LibreSpeed server, the exporter, Prometheus with the alerts and Grafana with the dashboard:
 
 ```sh
